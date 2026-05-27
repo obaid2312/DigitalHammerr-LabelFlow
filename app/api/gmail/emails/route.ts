@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { syncActiveLabelEmails } from '@/services/gmail';
-import { getMockEmails } from '@/lib/mockData';
+import { getMockEmails, MOCK_LABELS } from '@/lib/mockData';
 
 async function authenticate(request: NextRequest): Promise<string | null> {
   if (process.env.NEXT_PUBLIC_MOCK_MODE === 'true') {
@@ -34,9 +34,15 @@ export async function GET(request: NextRequest) {
   const sentiment = searchParams.get('sentiment') || undefined;
   const searchQuery = searchParams.get('q') || undefined;
   const limitVal = parseInt(searchParams.get('limit') || '50');
+  const activeOnly = searchParams.get('activeOnly') === 'true';
 
   if (process.env.NEXT_PUBLIC_MOCK_MODE === 'true') {
-    const emails = getMockEmails(searchQuery, labelId, category, sentiment).slice(0, limitVal);
+    let emails = getMockEmails(searchQuery, labelId, category, sentiment);
+    if (activeOnly) {
+      const activeMockLabelIds = MOCK_LABELS.filter(l => l.isActive).map(l => l.labelId);
+      emails = emails.filter(e => e.labels.some(lId => activeMockLabelIds.includes(lId)));
+    }
+    emails = emails.slice(0, limitVal);
     return NextResponse.json({ emails });
   }
 
@@ -53,12 +59,38 @@ export async function GET(request: NextRequest) {
       queryRef = queryRef.where('sentiment', '==', sentiment);
     }
 
+    let activeLabelIds: string[] = [];
+    if (activeOnly) {
+      const activeLabelsSnapshot = await adminDb
+        .collection('gmail_labels')
+        .where('uid', '==', uid)
+        .where('isActive', '==', true)
+        .get();
+
+      activeLabelIds = activeLabelsSnapshot.docs.map((doc: any) => doc.data().labelId);
+      if (activeLabelIds.length === 0) {
+        return NextResponse.json({ emails: [] });
+      }
+
+      if (activeLabelIds.length <= 10) {
+        queryRef = queryRef.where('labels', 'array-contains-any', activeLabelIds);
+      }
+    }
+
     // Order by timestamp descending
     queryRef = queryRef.orderBy('timestamp', 'desc');
 
     // Fetch documents
-    const snapshot = await queryRef.limit(limitVal * 2).get(); // fetch slightly more to allow search filtering in-memory
+    const fetchLimit = activeOnly && activeLabelIds.length > 10 ? 500 : limitVal * 2;
+    const snapshot = await queryRef.limit(fetchLimit).get();
     let emails = snapshot.docs.map((doc: any) => doc.data());
+
+    // Filter in-memory if activeOnly and > 10 labels
+    if (activeOnly && activeLabelIds.length > 10) {
+      emails = emails.filter((email: any) =>
+        email.labels && email.labels.some((lId: string) => activeLabelIds.includes(lId))
+      );
+    }
 
     // Apply text search query in-memory if provided
     if (searchQuery) {

@@ -52,7 +52,7 @@ export default function DashboardPage() {
   const fetchData = async (showLoading = true) => {
     if (showLoading) setLoading(true);
     try {
-      const emailsRes = await apiRequest('/api/gmail/emails?limit=40');
+      const emailsRes = await apiRequest('/api/gmail/emails?limit=100&activeOnly=true');
       setEmails(emailsRes.emails || []);
 
       const labelsRes = await apiRequest('/api/gmail/labels');
@@ -132,7 +132,7 @@ export default function DashboardPage() {
       name: label.labelName,
       count,
     };
-  }).filter(l => l.count > 0);
+  });
 
   // Email Date Trend (last 7 days)
   const getTrendData = () => {
@@ -325,7 +325,7 @@ export default function DashboardPage() {
                 {/* Recent Emails Section */}
                 <div className="bg-white border border-slate-100 rounded-xl shadow-soft overflow-hidden">
                   <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-                    <h4 className="text-sm font-semibold text-slate-800">Recent Threads</h4>
+                    <h4 className="text-sm font-semibold text-slate-800">Recent Fetched Emails</h4>
                     <Link
                       href="/emails"
                       className="text-xs font-semibold text-slate-500 hover:text-slate-800 flex items-center space-x-0.5 transition-colors"

@@ -343,6 +343,10 @@ export default function DashboardPage() {
                         negative: 'bg-red-50 text-red-700 border-red-100',
                       };
 
+                      const emailActiveLabels = labels
+                        .filter((l) => l.isActive && email.labels?.includes(l.labelId))
+                        .map((l) => l.labelName);
+
                       return (
                         <Link
                           key={email.messageId}
@@ -360,6 +364,14 @@ export default function DashboardPage() {
                                   day: 'numeric',
                                 })}
                               </span>
+                              {emailActiveLabels.map((lName) => (
+                                <span
+                                  key={lName}
+                                  className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 text-slate-600 text-[9px] font-bold rounded animate-fade-in"
+                                >
+                                  {lName}
+                                </span>
+                              ))}
                             </div>
 
                             <div className="flex items-center space-x-2">

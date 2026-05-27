@@ -47,19 +47,17 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    let queryRef: any = adminDb.collection('emails').where('uid', '==', uid);
+    let queryRef: any = adminDb.collection('emails')
+      .where('uid', '==', uid)
+      .orderBy('timestamp', 'desc');
 
-    if (labelId) {
-      queryRef = queryRef.where('labels', 'array-contains', labelId);
-    }
-    if (category) {
-      queryRef = queryRef.where('category', '==', category);
-    }
-    if (sentiment) {
-      queryRef = queryRef.where('sentiment', '==', sentiment);
-    }
+    const hasFilters = labelId || category || sentiment || searchQuery || activeOnly;
+    const limitToFetch = hasFilters ? 1000 : limitVal;
 
-    let activeLabelIds: string[] = [];
+    const snapshot = await queryRef.limit(limitToFetch).get();
+    let emails = snapshot.docs.map((doc: any) => doc.data());
+
+    // 1. Filter by activeOnly
     if (activeOnly) {
       const activeLabelsSnapshot = await adminDb
         .collection('gmail_labels')
@@ -67,32 +65,34 @@ export async function GET(request: NextRequest) {
         .where('isActive', '==', true)
         .get();
 
-      activeLabelIds = activeLabelsSnapshot.docs.map((doc: any) => doc.data().labelId);
+      const activeLabelIds = activeLabelsSnapshot.docs.map((doc: any) => doc.data().labelId);
       if (activeLabelIds.length === 0) {
         return NextResponse.json({ emails: [] });
       }
 
-      if (activeLabelIds.length <= 10) {
-        queryRef = queryRef.where('labels', 'array-contains-any', activeLabelIds);
-      }
-    }
-
-    // Order by timestamp descending
-    queryRef = queryRef.orderBy('timestamp', 'desc');
-
-    // Fetch documents
-    const fetchLimit = activeOnly && activeLabelIds.length > 10 ? 500 : limitVal * 2;
-    const snapshot = await queryRef.limit(fetchLimit).get();
-    let emails = snapshot.docs.map((doc: any) => doc.data());
-
-    // Filter in-memory if activeOnly and > 10 labels
-    if (activeOnly && activeLabelIds.length > 10) {
       emails = emails.filter((email: any) =>
         email.labels && email.labels.some((lId: string) => activeLabelIds.includes(lId))
       );
     }
 
-    // Apply text search query in-memory if provided
+    // 2. Filter by labelId
+    if (labelId) {
+      emails = emails.filter((email: any) =>
+        email.labels && email.labels.includes(labelId)
+      );
+    }
+
+    // 3. Filter by category
+    if (category) {
+      emails = emails.filter((email: any) => email.category === category);
+    }
+
+    // 4. Filter by sentiment
+    if (sentiment) {
+      emails = emails.filter((email: any) => email.sentiment === sentiment);
+    }
+
+    // 5. Apply text search query in-memory if provided
     if (searchQuery) {
       const lowerQuery = searchQuery.toLowerCase();
       emails = emails.filter(

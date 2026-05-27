@@ -208,8 +208,12 @@ export async function syncEmailById(uid: string, messageId: string): Promise<Ema
 
     await emailRef.set(email, { merge: true });
     return email;
-  } catch (error) {
+  } catch (error: any) {
     console.error(`Error syncing message ${messageId} for user ${uid}:`, error);
+    if (error.code === 404 || error.status === 404 || error.message?.includes('Not Found')) {
+      console.log(`Email ${messageId} not found in Gmail. Deleting from Firestore.`);
+      await adminDb.collection('emails').doc(`${uid}_${messageId}`).delete();
+    }
     throw error;
   }
 }
@@ -258,13 +262,53 @@ export async function syncActiveLabelEmails(uid: string, limit: number = 20) {
   const messages = listResponse.data.messages || [];
   let syncedCount = 0;
 
+  const gmailMsgIds = new Set(messages.map((m) => m.id).filter(Boolean));
+  let oldestTimestamp = Infinity;
+  let newestTimestamp = 0;
+
   for (const msg of messages) {
     if (!msg.id) continue;
     try {
-      await syncEmailById(uid, msg.id);
+      const email = await syncEmailById(uid, msg.id);
+      const ts = new Date(email.timestamp).getTime();
+      if (ts < oldestTimestamp) oldestTimestamp = ts;
+      if (ts > newestTimestamp) newestTimestamp = ts;
       syncedCount++;
     } catch (e) {
       console.warn(`Failed to sync individual email ${msg.id}:`, e);
+    }
+  }
+
+  // Self-healing: Clean up local Firestore emails in the synced time range that no longer exist in Gmail list
+  if (syncedCount > 0 && oldestTimestamp !== Infinity) {
+    try {
+      const localSnapshot = await adminDb.collection('emails')
+        .where('uid', '==', uid)
+        .get();
+
+      const batch = adminDb.batch();
+      let deleteCount = 0;
+
+      for (const doc of localSnapshot.docs) {
+        const email = doc.data() as EmailMetadata;
+        const ts = new Date(email.timestamp).getTime();
+
+        // If the email is in the time window we just synced, but was not in the Gmail API list, it was deleted or moved
+        if (ts >= oldestTimestamp && ts <= newestTimestamp) {
+          if (!gmailMsgIds.has(email.messageId)) {
+            console.log(`Self-healing: Deleting deleted/moved email from Firestore: ${email.messageId} (${email.subject})`);
+            batch.delete(doc.ref);
+            deleteCount++;
+          }
+        }
+      }
+
+      if (deleteCount > 0) {
+        await batch.commit();
+        console.log(`Self-healing synced: Cleaned up ${deleteCount} deleted/moved emails from Firestore.`);
+      }
+    } catch (cleanupErr) {
+      console.error('Self-healing cleanup failed:', cleanupErr);
     }
   }
 

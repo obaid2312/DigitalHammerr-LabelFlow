@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { DashboardLayout } from '@/components/DashboardLayout';
 import { Navbar } from '@/components/Navbar';
 import { apiRequest } from '@/lib/api';
+import { useAuth } from '@/lib/authContext';
 import { EmailMetadata, GmailLabel } from '@/types';
 import { Loader, Skeleton } from '@/components/Loader';
 import { 
@@ -30,6 +31,7 @@ import {
 
 export default function EmailDetailPage({ params }: { params: any }) {
   const router = useRouter();
+  const { user } = useAuth();
   const [emailId, setEmailId] = useState<string | null>(null);
   const [email, setEmail] = useState<EmailMetadata | null>(null);
   const [labels, setLabels] = useState<GmailLabel[]>([]);
@@ -429,7 +431,7 @@ export default function EmailDetailPage({ params }: { params: any }) {
                 <div className="space-y-3">
                   {thread.map((msg, index) => {
                     const isExpanded = !!expandedMessageIds[msg.messageId];
-                    const isSentByMe = msg.labels?.includes('SENT') || msg.from?.toLowerCase().includes('obaid');
+                    const isSentByMe = msg.labels?.includes('SENT') || (user?.email && msg.from?.toLowerCase().includes(user.email.toLowerCase()));
                     const senderName = msg.from ? msg.from.split('<')[0].replace(/"/g, '').trim() : 'Unknown';
                     const senderEmail = msg.from && msg.from.includes('<') ? msg.from.split('<')[1].replace(/>/g, '').trim() : '';
                     const initials = senderName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'E';

@@ -543,6 +543,12 @@ export async function fetchEmailThread(uid: string, threadId: string): Promise<E
         if (existingData?.leadScore !== undefined) normalized.leadScore = existingData.leadScore;
         if (existingData?.category !== undefined) normalized.category = existingData.category;
         if (existingData?.aiExtraction !== undefined) normalized.aiExtraction = existingData.aiExtraction;
+      } else {
+        // Automatically save unsynced messages in the thread to Firestore
+        await emailRef.set({
+          ...normalized,
+          updatedAt: new Date().toISOString(),
+        });
       }
       
       normalizedMessages.push(normalized);

@@ -20,7 +20,9 @@ import {
   CheckSquare,
   Bookmark,
   Check,
-  Plus
+  Plus,
+  CornerUpLeft,
+  Send
 } from 'lucide-react';
 
 export default function EmailDetailPage({ params }: { params: any }) {
@@ -32,6 +34,12 @@ export default function EmailDetailPage({ params }: { params: any }) {
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
   const [labelEditing, setLabelEditing] = useState(false);
   const [savingLabels, setSavingLabels] = useState(false);
+  
+  // Reply states
+  const [replyText, setReplyText] = useState('');
+  const [sendingReply, setSendingReply] = useState(false);
+  const [replySuccess, setReplySuccess] = useState(false);
+  const [suggestingReply, setSuggestingReply] = useState(false);
 
   // Unwrap params
   useEffect(() => {
@@ -119,6 +127,50 @@ export default function EmailDetailPage({ params }: { params: any }) {
       console.error('Failed to modify labels:', e);
     } finally {
       setSavingLabels(false);
+    }
+  };
+
+  const handleSuggestReply = async () => {
+    setSuggestingReply(true);
+    try {
+      const res = await apiRequest('/api/gmail/reply', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'suggest',
+          emailId,
+        }),
+      });
+      if (res.suggestion) {
+        setReplyText(res.suggestion);
+      }
+    } catch (e) {
+      console.error('Failed to get reply suggestion:', e);
+    } finally {
+      setSuggestingReply(false);
+    }
+  };
+
+  const handleSendReply = async () => {
+    if (!replyText.trim() || !emailId) return;
+    setSendingReply(true);
+    setReplySuccess(false);
+    try {
+      await apiRequest('/api/gmail/reply', {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'send',
+          emailId,
+          replyBody: replyText,
+        }),
+      });
+      setReplySuccess(true);
+      setReplyText('');
+      // Auto-hide success message after 4 seconds
+      setTimeout(() => setReplySuccess(false), 4000);
+    } catch (e) {
+      console.error('Failed to send reply:', e);
+    } finally {
+      setSendingReply(false);
     }
   };
 
@@ -320,6 +372,54 @@ export default function EmailDetailPage({ params }: { params: any }) {
               
               <div className="text-slate-750 text-xs leading-relaxed whitespace-pre-line overflow-x-auto max-h-[500px] font-sans selection:bg-slate-100">
                 {email.body || email.snippet || '(No content available)'}
+              </div>
+            </div>
+
+            {/* Send Reply Section */}
+            <div className="bg-white border border-slate-100 p-6 rounded-xl shadow-soft space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-50 pb-3">
+                <h3 className="text-sm font-semibold text-slate-800 flex items-center space-x-1.5">
+                  <CornerUpLeft size={16} className="text-slate-700" />
+                  <span>Send a Reply</span>
+                </h3>
+
+                <button
+                  onClick={handleSuggestReply}
+                  disabled={suggestingReply || sendingReply}
+                  className="inline-flex items-center space-x-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white disabled:from-slate-100 disabled:to-slate-100 disabled:text-slate-450 rounded-lg text-xs font-semibold shadow-sm transition-all cursor-pointer"
+                >
+                  <Sparkles size={12} className={suggestingReply ? 'animate-pulse' : ''} />
+                  <span>{suggestingReply ? 'Drafting...' : 'Draft with Gemini'}</span>
+                </button>
+              </div>
+
+              {replySuccess && (
+                <div className="p-3 bg-green-50 border border-green-100 text-green-700 text-xs rounded-lg flex items-center space-x-2 animate-fade-in">
+                  <Check size={14} className="stroke-[2.5]" />
+                  <span>Reply sent successfully!</span>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <textarea
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  placeholder="Type your response here, or click 'Draft with Gemini' to automatically generate a smart response..."
+                  disabled={sendingReply}
+                  rows={8}
+                  className="w-full p-4 border border-slate-200 rounded-xl text-xs text-slate-750 focus:outline-none focus:ring-1 focus:ring-slate-900 focus:border-transparent transition-all resize-y placeholder:text-slate-400"
+                />
+
+                <div className="flex justify-end">
+                  <button
+                    onClick={handleSendReply}
+                    disabled={sendingReply || !replyText.trim()}
+                    className="inline-flex items-center space-x-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-100 disabled:text-slate-400 text-white rounded-lg text-xs font-semibold shadow transition-all cursor-pointer"
+                  >
+                    <Send size={12} />
+                    <span>{sendingReply ? 'Sending...' : 'Send Reply'}</span>
+                  </button>
+                </div>
               </div>
             </div>
           </div>

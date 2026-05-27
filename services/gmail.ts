@@ -368,3 +368,72 @@ export async function stopWatchGmail(uid: string): Promise<void> {
     watchExpiration: null,
   });
 }
+
+/**
+ * Sends a reply to an email via Gmail API.
+ */
+export async function sendGmailReply(
+  uid: string,
+  emailId: string,
+  replyBody: string
+): Promise<any> {
+  const auth = await getOAuthClient(uid);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  // 1. Fetch original email to get headers and thread ID
+  const originalMsg = await gmail.users.messages.get({
+    userId: 'me',
+    id: emailId,
+    format: 'full',
+  });
+
+  const headers = originalMsg.data.payload?.headers || [];
+  const getHeader = (name: string): string => {
+    const h = headers.find((h: any) => h.name.toLowerCase() === name.toLowerCase());
+    return h ? h.value || '' : '';
+  };
+
+  const rfcMessageId = getHeader('message-id');
+  const originalSubject = getHeader('subject') || '';
+  const replySubject = originalSubject.toLowerCase().startsWith('re:') 
+    ? originalSubject 
+    : `Re: ${originalSubject}`;
+  
+  // Recipient of the reply should be the person who sent it (From)
+  const replyTo = getHeader('from');
+  if (!replyTo) {
+    throw new Error('Could not identify sender to reply to.');
+  }
+  const threadId = originalMsg.data.threadId || undefined;
+
+  // Convert text newlines to HTML br tags
+  const htmlBody = replyBody.replace(/\n/g, '<br/>');
+
+  // Convert HTML line breaks to MIME compliant headers/body
+  const rawContent = [
+    `To: ${replyTo}`,
+    `Subject: ${replySubject}`,
+    rfcMessageId ? `In-Reply-To: ${rfcMessageId}` : '',
+    rfcMessageId ? `References: ${rfcMessageId}` : '',
+    'Content-Type: text/html; charset=utf-8',
+    'MIME-Version: 1.0',
+    '',
+    htmlBody,
+  ].filter(Boolean).join('\r\n');
+
+  const encodedRaw = Buffer.from(rawContent)
+    .toString('base64')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+
+  const response = await gmail.users.messages.send({
+    userId: 'me',
+    requestBody: {
+      raw: encodedRaw,
+      threadId,
+    },
+  });
+
+  return response.data;
+}

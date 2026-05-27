@@ -137,3 +137,56 @@ export async function analyzeEmailWithAI(
     return emailData;
   }
 }
+
+/**
+ * Suggests an email reply draft using Gemini based on the original email context.
+ */
+export async function generateReplySuggestion(
+  uid: string,
+  emailId: string
+): Promise<string> {
+  const emailRef = adminDb.collection('emails').doc(`${uid}_${emailId}`);
+  const emailSnap = await emailRef.get();
+  
+  if (!emailSnap.exists) {
+    throw new Error(`Email with ID ${emailId} not found in Firestore.`);
+  }
+
+  const emailData = emailSnap.data() as EmailMetadata;
+  const aiClient = getGeminiClient();
+
+  if (!aiClient) {
+    return 'Gemini API key is not configured. Please draft your reply manually.';
+  }
+
+  const prompt = `
+    You are an AI assistant helping a professional reply to their emails.
+    Below is the content of an email they received.
+    Draft a professional, friendly, and concise reply to this email.
+    
+    Ensure the reply is formatted cleanly. Do NOT include markdown blocks like \`\`\`html or \`\`\`text. Return only the plain reply text. Use simple paragraphs or line breaks.
+    Do NOT include placeholder texts like "[Your Name]" or "[My Company]" if possible, instead just leave a professional signature placeholder like:
+    
+    Best regards,
+    Md. Obaidullah Ansari
+
+    Original Email Details:
+    FROM: ${emailData.from}
+    SUBJECT: ${emailData.subject}
+    BODY:
+    ${emailData.body}
+  `;
+
+  try {
+    const model = aiClient.getGenerativeModel({
+      model: 'gemini-1.5-flash',
+    });
+
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
+    return responseText ? responseText.trim() : '';
+  } catch (error) {
+    console.error(`AI reply suggestion failed for email ${emailId}:`, error);
+    return 'Could not generate reply suggestion at this time.';
+  }
+}

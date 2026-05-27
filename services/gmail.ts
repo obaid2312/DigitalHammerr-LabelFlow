@@ -410,16 +410,16 @@ export async function sendGmailReply(
   const htmlBody = replyBody.replace(/\n/g, '<br/>');
 
   // Convert HTML line breaks to MIME compliant headers/body
-  const rawContent = [
+  const headersList = [
     `To: ${replyTo}`,
     `Subject: ${replySubject}`,
     rfcMessageId ? `In-Reply-To: ${rfcMessageId}` : '',
     rfcMessageId ? `References: ${rfcMessageId}` : '',
     'Content-Type: text/html; charset=utf-8',
     'MIME-Version: 1.0',
-    '',
-    htmlBody,
-  ].filter(Boolean).join('\r\n');
+  ].filter(Boolean);
+
+  const rawContent = headersList.join('\r\n') + '\r\n\r\n' + htmlBody;
 
   const encodedRaw = Buffer.from(rawContent)
     .toString('base64')

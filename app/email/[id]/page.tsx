@@ -370,8 +370,27 @@ export default function EmailDetailPage({ params }: { params: any }) {
                 Email Message Content
               </h3>
               
-              <div className="text-slate-750 text-xs leading-relaxed whitespace-pre-line overflow-x-auto max-h-[500px] font-sans selection:bg-slate-100">
-                {email.body || email.snippet || '(No content available)'}
+              <div className="border border-slate-150 rounded-xl overflow-hidden bg-slate-50">
+                {email.body ? (
+                  <iframe
+                    srcDoc={
+                      email.body.trim().startsWith('<') || email.body.includes('</')
+                        ? email.body
+                        : `<html>
+                            <body style="font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 13px; color: #334155; line-height: 1.5; white-space: pre-wrap; margin: 0; padding: 16px;">
+                              ${email.body}
+                            </body>
+                           </html>`
+                    }
+                    title="Email Content"
+                    sandbox="allow-popups allow-popups-to-escape-sandbox"
+                    className="w-full min-h-[450px] max-h-[600px] border-0 block bg-white"
+                  />
+                ) : (
+                  <div className="p-6 text-center text-xs text-slate-400 italic">
+                    (No content available)
+                  </div>
+                )}
               </div>
             </div>
 

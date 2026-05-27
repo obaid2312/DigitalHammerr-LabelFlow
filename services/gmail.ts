@@ -481,3 +481,77 @@ export async function sendGmailReply(
 
   return response.data;
 }
+
+/**
+ * Fetches the entire conversation thread from Gmail API and normalizes it.
+ */
+export async function fetchEmailThread(uid: string, threadId: string): Promise<EmailMetadata[]> {
+  if (process.env.NEXT_PUBLIC_MOCK_MODE === 'true') {
+    return [
+      {
+        uid,
+        messageId: 'mock-msg-1',
+        threadId,
+        from: 'Client <client@example.com>',
+        to: 'Md. Obaidullah Ansari <obaidansari2312@gmail.com>',
+        subject: 'Inquiry about pricing',
+        snippet: 'Hi, I would like to know the pricing details for your SaaS product.',
+        body: 'Hi,\n\nI would like to know the pricing details for your SaaS product. Do you have bulk discounts?\n\nBest regards,\nClient',
+        labels: ['INBOX'],
+        timestamp: new Date(Date.now() - 3600000 * 2).toISOString(),
+        createdAt: new Date().toISOString(),
+      },
+      {
+        uid,
+        messageId: 'mock-msg-2',
+        threadId,
+        from: 'Md. Obaidullah Ansari <obaidansari2312@gmail.com>',
+        to: 'Client <client@example.com>',
+        subject: 'Re: Inquiry about pricing',
+        snippet: 'Hello! Thank you for reaching out. Our pricing starts at $49/mo.',
+        body: 'Hello!\n\nThank you for reaching out. Our pricing starts at $49/mo. We also offer custom enterprise plans with bulk discounts.\n\nBest regards,\nMd. Obaidullah Ansari',
+        labels: ['SENT'],
+        timestamp: new Date(Date.now() - 3600000).toISOString(),
+        createdAt: new Date().toISOString(),
+      }
+    ];
+  }
+
+  const auth = await getOAuthClient(uid);
+  const gmail = google.gmail({ version: 'v1', auth });
+
+  try {
+    const response = await gmail.users.threads.get({
+      userId: 'me',
+      id: threadId,
+      format: 'full',
+    });
+
+    const messages = response.data.messages || [];
+    const normalizedMessages: EmailMetadata[] = [];
+
+    for (const msg of messages) {
+      const normalized = normalizeGmailMessage(msg, uid);
+      
+      // Try to merge existing Firestore details (like AI enrichments) if they exist
+      const emailRef = adminDb.collection('emails').doc(`${uid}_${msg.id}`);
+      const existingDoc = await emailRef.get();
+      if (existingDoc.exists) {
+        const existingData = existingDoc.data();
+        if (existingData?.sentiment !== undefined) normalized.sentiment = existingData.sentiment;
+        if (existingData?.aiSummary !== undefined) normalized.aiSummary = existingData.aiSummary;
+        if (existingData?.leadScore !== undefined) normalized.leadScore = existingData.leadScore;
+        if (existingData?.category !== undefined) normalized.category = existingData.category;
+        if (existingData?.aiExtraction !== undefined) normalized.aiExtraction = existingData.aiExtraction;
+      }
+      
+      normalizedMessages.push(normalized);
+    }
+
+    // Sort by timestamp ascending so oldest is first
+    return normalizedMessages.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  } catch (error) {
+    console.error(`Error fetching thread ${threadId} for user ${uid}:`, error);
+    throw error;
+  }
+}

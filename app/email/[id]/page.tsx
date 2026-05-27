@@ -22,7 +22,10 @@ import {
   Check,
   Plus,
   CornerUpLeft,
-  Send
+  Send,
+  ChevronDown,
+  ChevronUp,
+  History
 } from 'lucide-react';
 
 export default function EmailDetailPage({ params }: { params: any }) {
@@ -35,6 +38,10 @@ export default function EmailDetailPage({ params }: { params: any }) {
   const [labelEditing, setLabelEditing] = useState(false);
   const [savingLabels, setSavingLabels] = useState(false);
   
+  // Thread trailing state
+  const [thread, setThread] = useState<EmailMetadata[]>([]);
+  const [expandedMessageIds, setExpandedMessageIds] = useState<Record<string, boolean>>({});
+
   // Reply states
   const [replyText, setReplyText] = useState('');
   const [sendingReply, setSendingReply] = useState(false);
@@ -56,6 +63,14 @@ export default function EmailDetailPage({ params }: { params: any }) {
     try {
       const data = await apiRequest(`/api/gmail/email/${emailId}`);
       setEmail(data.email || null);
+      const threadData = data.thread || [];
+      setThread(threadData);
+      
+      // Expand the latest message by default
+      if (threadData.length > 0) {
+        const latestMsgId = threadData[threadData.length - 1].messageId;
+        setExpandedMessageIds({ [latestMsgId]: true });
+      }
     } catch (e) {
       console.error('Failed to load email details:', e);
     } finally {
@@ -70,6 +85,13 @@ export default function EmailDetailPage({ params }: { params: any }) {
     } catch (e) {
       console.error('Failed to fetch labels:', e);
     }
+  };
+
+  const toggleMessageExpansion = (msgId: string) => {
+    setExpandedMessageIds((prev) => ({
+      ...prev,
+      [msgId]: !prev[msgId],
+    }));
   };
 
   useEffect(() => {
@@ -393,6 +415,117 @@ export default function EmailDetailPage({ params }: { params: any }) {
                 )}
               </div>
             </div>
+
+            {/* Email Conversation Trail */}
+            {thread.length > 0 && (
+              <div className="bg-white border border-slate-100 p-6 rounded-xl shadow-soft space-y-4">
+                <div className="flex items-center space-x-2 border-b border-slate-50 pb-3">
+                  <History size={16} className="text-slate-500" />
+                  <h3 className="text-sm font-semibold text-slate-800">
+                    Email Conversation Trail ({thread.length} messages)
+                  </h3>
+                </div>
+
+                <div className="space-y-3">
+                  {thread.map((msg, index) => {
+                    const isExpanded = !!expandedMessageIds[msg.messageId];
+                    const isSentByMe = msg.labels?.includes('SENT') || msg.from?.toLowerCase().includes('obaid');
+                    const senderName = msg.from ? msg.from.split('<')[0].replace(/"/g, '').trim() : 'Unknown';
+                    const senderEmail = msg.from && msg.from.includes('<') ? msg.from.split('<')[1].replace(/>/g, '').trim() : '';
+                    const initials = senderName.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase() || 'E';
+
+                    return (
+                      <div 
+                        key={msg.messageId} 
+                        className={`border rounded-xl overflow-hidden transition-all duration-200 ${
+                          isExpanded 
+                            ? 'border-slate-200 shadow-sm' 
+                            : 'border-slate-100 hover:border-slate-200 bg-slate-50/30'
+                        }`}
+                      >
+                        {/* Collapsed/Expanded Header Row */}
+                        <div 
+                          onClick={() => toggleMessageExpansion(msg.messageId)}
+                          className="flex items-center justify-between p-4 cursor-pointer select-none hover:bg-slate-50/50 transition-colors"
+                        >
+                          <div className="flex items-center space-x-3 min-w-0">
+                            {/* Sender Avatar */}
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                              isSentByMe 
+                                ? 'bg-indigo-50 text-indigo-600 border border-indigo-100' 
+                                : 'bg-slate-100 text-slate-600 border border-slate-200'
+                            }`}>
+                              {initials}
+                            </div>
+
+                            <div className="min-w-0">
+                              <div className="flex items-center space-x-2 flex-wrap">
+                                <span className="text-xs font-bold text-slate-700 truncate">
+                                  {senderName}
+                                </span>
+                                {senderEmail && (
+                                  <span className="text-[10px] text-slate-400 truncate hidden sm:inline">
+                                    &lt;{senderEmail}&gt;
+                                  </span>
+                                )}
+                                {isSentByMe ? (
+                                  <span className="bg-indigo-50 text-indigo-600 border border-indigo-100 text-[9px] font-bold px-1.5 py-0.5 rounded">
+                                    SENT
+                                  </span>
+                                ) : (
+                                  <span className="bg-emerald-50 text-emerald-600 border border-emerald-100 text-[9px] font-bold px-1.5 py-0.5 rounded">
+                                    RECEIVED
+                                  </span>
+                                )}
+                              </div>
+                              <p className="text-[11px] text-slate-500 truncate mt-0.5">
+                                {msg.snippet || '(No snippet)'}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center space-x-3 shrink-0 pl-2">
+                            <span className="text-[10px] text-slate-400">
+                              {new Date(msg.timestamp).toLocaleString(undefined, {
+                                month: 'short',
+                                day: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit'
+                              })}
+                            </span>
+                            {isExpanded ? (
+                              <ChevronUp size={14} className="text-slate-400" />
+                            ) : (
+                              <ChevronDown size={14} className="text-slate-400" />
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Expandable Body */}
+                        {isExpanded && (
+                          <div className="border-t border-slate-100 bg-white">
+                            <iframe
+                              srcDoc={
+                                msg.body && (msg.body.trim().startsWith('<') || msg.body.includes('</'))
+                                  ? msg.body
+                                  : `<html>
+                                      <body style="font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; font-size: 13px; color: #334155; line-height: 1.5; white-space: pre-wrap; margin: 0; padding: 16px;">
+                                        ${msg.body || msg.snippet || '(No content available)'}
+                                      </body>
+                                     </html>`
+                              }
+                              title={`Email Content ${msg.messageId}`}
+                              sandbox="allow-popups allow-popups-to-escape-sandbox"
+                              className="w-full min-h-[300px] max-h-[500px] border-0 block bg-white"
+                            />
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* Send Reply Section */}
             <div className="bg-white border border-slate-100 p-6 rounded-xl shadow-soft space-y-4">

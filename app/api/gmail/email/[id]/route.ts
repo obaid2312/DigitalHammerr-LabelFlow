@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminAuth, adminDb } from '@/lib/firebaseAdmin';
 import { analyzeEmailWithAI } from '@/services/gemini';
-import { syncEmailById } from '@/services/gmail';
+import { syncEmailById, fetchEmailThread } from '@/services/gmail';
 import { getMockEmailDetail } from '@/lib/mockData';
 
 async function authenticate(request: NextRequest): Promise<string | null> {
@@ -42,7 +42,30 @@ export async function GET(
     if (!emailData) {
       return NextResponse.json({ error: 'Email not found' }, { status: 404 });
     }
-    return NextResponse.json({ email: emailData });
+    const mockThread = [
+      {
+        ...emailData,
+        messageId: 'mock-msg-1',
+        from: 'Client <client@example.com>',
+        to: 'Md. Obaidullah Ansari <obaidansari2312@gmail.com>',
+        body: 'Hi, I would like to know the pricing details for your SaaS product. Do you have bulk discounts?',
+        timestamp: new Date(Date.now() - 7200000).toISOString(),
+      },
+      {
+        ...emailData,
+        messageId: 'mock-msg-2',
+        from: 'Md. Obaidullah Ansari <obaidansari2312@gmail.com>',
+        to: 'Client <client@example.com>',
+        body: 'Hello!\n\nThank you for reaching out. Our pricing starts at $49/mo. We also offer custom enterprise plans with bulk discounts.\n\nBest regards,\nMd. Obaidullah Ansari',
+        timestamp: new Date(Date.now() - 3600000).toISOString(),
+      },
+      {
+        ...emailData,
+        body: emailData.body || 'Hi, just confirming if you received my message!',
+        timestamp: emailData.timestamp,
+      }
+    ];
+    return NextResponse.json({ email: emailData, thread: mockThread });
   }
 
   try {
@@ -71,7 +94,20 @@ export async function GET(
       }
     }
 
-    return NextResponse.json({ email: emailData });
+    // 4. Fetch thread trailing
+    let threadMessages: any[] = [];
+    try {
+      if (emailData && emailData.threadId) {
+        threadMessages = await fetchEmailThread(uid, emailData.threadId);
+      }
+    } catch (threadErr) {
+      console.error('Failed to fetch thread messages:', threadErr);
+      if (emailData) {
+        threadMessages = [emailData];
+      }
+    }
+
+    return NextResponse.json({ email: emailData, thread: threadMessages });
   } catch (error: any) {
     console.error(`Error fetching email detail for ${emailId}:`, error);
     return NextResponse.json({ error: error.message || 'Internal Server Error' }, { status: 500 });
